@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:html/parser.dart' as html_parser;
+import 'package:flutter_html/flutter_html.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'dart:io';
 
 void main() {
   runApp(MyApp());
@@ -27,6 +28,12 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   late WebViewController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    if (Platform.isAndroid) WebView.platform = SurfaceAndroidWebView();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +69,8 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   List<Announcement> _announcements = [];
+  String _sourceUrl =
+      'https://m.oh-o2.meiji.ac.jp/OhoMeijiSS/information_top.action';
 
   @override
   void initState() {
@@ -70,19 +79,26 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _fetchAnnouncements() async {
-    final response = await http.get(Uri.parse(
-        'https://m.oh-o2.meiji.ac.jp/OhoMeijiSS/information_top.action'));
+    final response = await http.get(Uri.parse(_sourceUrl));
     if (response.statusCode == 200) {
-      var document = html_parser.parse(response.body);
-      var elements = document
-          .querySelectorAll('#information-top .informationDetailLinker');
       setState(() {
-        _announcements = elements.map((element) {
-          var titleElement = element.querySelector('.title p');
-          var detailElement = element.querySelector('.content .textGray');
+        var document = response.body;
+        var elements = document
+            .split('<div class="informationDetailLinker list-box clearfix">');
+        _announcements = elements.skip(1).map((element) {
+          var titleStart = element.indexOf('<div class="title"><span><p') +
+              '<div class="title"><span><p style="overflow: hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:normal;">'
+                  .length;
+          var titleEnd = element.indexOf('</p>', titleStart);
+          var detailStart = element.indexOf(
+                  '<div class="content clearfix text"><p class="textGray">') +
+              '<div class="content clearfix text"><p class="textGray">'.length;
+          var detailEnd = element.indexOf('</p>', detailStart);
+          var title = element.substring(titleStart, titleEnd).trim();
+          var detail = element.substring(detailStart, detailEnd).trim();
           return Announcement(
-            title: titleElement?.text ?? 'No title',
-            detail: detailElement?.text ?? 'No detail',
+            title: title,
+            detail: detail,
           );
         }).toList();
       });
@@ -96,7 +112,7 @@ class _HomePageState extends State<HomePage> {
         return AlertDialog(
           title: Text(announcement.title),
           content: SingleChildScrollView(
-            child: Text(announcement.detail),
+            child: Html(data: announcement.detail),
           ),
           actions: [
             TextButton(
@@ -132,16 +148,31 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: Text('ホーム'),
       ),
-      body: ListView.builder(
-        itemCount: _announcements.length,
-        itemBuilder: (context, index) {
-          return ListTile(
-            title: Text(_announcements[index].title),
-            onTap: () {
-              _showAnnouncementDetail(_announcements[index]);
-            },
-          );
-        },
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              itemCount: _announcements.length,
+              itemBuilder: (context, index) {
+                return ListTile(
+                  title: Text(_announcements[index].title),
+                  onTap: () {
+                    _showAnnouncementDetail(_announcements[index]);
+                  },
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Chip(
+                label: Text('取得元URL: $_sourceUrl'),
+              ),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
